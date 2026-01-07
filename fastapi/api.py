@@ -64,12 +64,12 @@ historical_data = fit_scaler_on_ref_data(PROCESSED_DATA_PATH, scaler, drop_colum
 ksd = KSDrift(x_ref=historical_data, p_val=0.05)
 
 # Prometheus initialization
-prediction_total = Counter("prediction_total", "Total number of predictions")
+prediction_request_total = Counter("prediction_request_total", "Total number of prediction requests")
 drift_total = Counter("drift_total", "Total number of times data drift is detected")
 prediction_latency_seconds = Histogram(
     "prediction_latency_seconds",
     "Model prediction latency",
-    buckets=[0.02, 0.04, 0.06, 0.08, 0.1]
+    buckets=[0.02, 0.04, 0.06, 0.08, 0.1, 0.12, 0.14, 0.16]
 )
 prediction_error_total = Counter("prediction_error_total", "Total number of failed predictions")
 
@@ -89,6 +89,7 @@ async def predict(request: Request) -> JSONResponse:
     """
     try:
         start = time()
+        prediction_request_total.inc()
         raw_input = await request.json()
         df_raw = pd.DataFrame([raw_input])
 
@@ -107,7 +108,6 @@ async def predict(request: Request) -> JSONResponse:
 
         # prediction
         prediction = model.predict(features)[0]
-        prediction_total.inc()
         result = "Survived" if prediction == 1 else "Did Not Survive"
 
         prediction_latency_seconds.observe(time() - start)

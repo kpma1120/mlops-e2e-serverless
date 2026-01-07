@@ -65,7 +65,7 @@
               "mode": "off"
             }
           },
-          "displayName": "Prediction Count",
+          "displayName": "Prediction Request Count",
           "mappings": [],
           "thresholds": {
             "mode": "absolute",
@@ -107,7 +107,7 @@
       "targets": [
         {
           "editorMode": "code",
-          "expr": "prediction_total",
+          "expr": "prediction_request_total",
           "legendFormat": "__auto",
           "range": true,
           "refId": "A"
@@ -360,7 +360,7 @@
             "uid": "df988fxbot4hsf"
           },
           "editorMode": "code",
-          "expr": "sum(increase(prediction_total[365d])) - sum(increase(prediction_error_total[365d]))",
+          "expr": "sum(increase(prediction_request_total[365d])) - sum(increase(prediction_error_total[365d]))",
           "hide": false,
           "instant": false,
           "interval": "",
@@ -380,12 +380,12 @@
     "list": []
   },
   "time": {
-    "from": "now-30d",
+    "from": "2026-01-07T16:00:00.000Z",
     "to": "now"
   },
   "timepicker": {},
   "timezone": "browser",
   "title": "MLOps Model Monitoring Dashboard (Titanic Example)",
   "uid": "ad4qm7g",
-  "version": 2
+  "version": 1
 }

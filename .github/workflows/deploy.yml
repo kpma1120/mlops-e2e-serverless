@@ -1,0 +1,117 @@
+name: CI/CD Deployment to GKE
+
+on:
+  push:
+    branches:
+      - main
+    tags:
+      - "init-data-*"
+
+env:
+  PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
+  GKE_CLUSTER: "my-cluster"
+  GKE_REGION: "us-east1"
+  REPOSITORY: "us-east1-docker.pkg.dev/mlops-repo1/my-repo"
+  FASTAPI_IMAGE: "us-east1-docker.pkg.dev/mlops-repo1/my-repo/fastapi"
+  FLASK_IMAGE: "us-east1-docker.pkg.dev/mlops-repo1/my-repo/flask"
+  GRAFANA_IMAGE: "grafana/grafana:latest"
+  PROMETHEUS_IMAGE: "prom/prometheus:latest"
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+
+    container:
+      image: google/cloud-sdk:latest
+    
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Authenticate with Google cloud
+        uses: 'google-github-actions/auth@v3'
+        with:
+          credentials_json: ${{ secrets.GCP_SA_KEY }}
+          project_id: ${{ secrets.GCP_PROJECT_ID }}
+      
+      - name: Configure Docker for Artifact Registry
+        run: |
+          gcloud auth configure-docker us-east1-docker.pkg.dev
+      
+      - name: Install Docker CLI
+        run: |
+          apt-get update
+          apt-get install -y docker.io
+
+      - name: Pre-build health check (CI workspace)
+        run: |
+          echo "Checking artifacts directory in CI workspace..."
+          ls -l artifacts/processed || (echo "❌ artifacts/processed directory missing" && exit 1)
+          ls -l artifacts/models || (echo "❌ artifacts/models directory missing" && exit 1)
+          ls -l src || (echo "❌ src/ directory missing" && exit 1)
+          ls -l fastapi || (echo "❌ fastapi/ directory missing" && exit 1)
+          ls -l flask || (echo "❌ flask/ directory missing" && exit 1)
+      
+      - name: Build and Push FastAPI Image
+        run: |
+          docker build -t $FASTAPI_IMAGE:$GITHUB_SHA -t $FASTAPI_IMAGE:latest -f fastapi/Dockerfile ./
+          docker push $FASTAPI_IMAGE:$GITHUB_SHA
+          docker push $FASTAPI_IMAGE:latest
+
+      - name: Build and Push Flask Image
+        run: |
+          docker build -t $FLASK_IMAGE:$GITHUB_SHA -t $FLASK_IMAGE:latest ./flask
+          docker push $FLASK_IMAGE:$GITHUB_SHA
+          docker push $FLASK_IMAGE:latest
+
+      - name: Post-build health check (container filesystem)
+        run: |
+          echo "Checking artifacts directory inside container..."
+          docker run --rm $FASTAPI_IMAGE:latest ls -l /artifacts/processed || (echo "❌ /artifacts/processed missing in image" && exit 1)
+          docker run --rm $FASTAPI_IMAGE:latest ls -l /artifacts/models || (echo "❌ /artifacts/models missing in image" && exit 1)
+          docker run --rm $FASTAPI_IMAGE:latest ls -l /src || (echo "❌ /src missing in image" && exit 1)
+          docker run --rm $FASTAPI_IMAGE:latest ls -l /api.py || (echo "❌ api.py missing in image" && exit 1)
+          docker run --rm $FLASK_IMAGE:latest ls -l /static || (echo "❌ /static missing in image" && exit 1)
+          docker run --rm $FLASK_IMAGE:latest ls -l /templates || (echo "❌ /templates missing in image" && exit 1)
+          docker run --rm $FLASK_IMAGE:latest ls -l /ui.py || (echo "❌ ui.py missing in image" && exit 1)
+
+      - name: GKE Configuration
+        run: |
+          gcloud container clusters get-credentials $GKE_CLUSTER --region $GKE_REGION --project $PROJECT_ID
+
+      - name: Sync ConfigMaps from repo files
+        run: |
+          kubectl create configmap prometheus-config --from-file=prometheus.yml --dry-run=client -o yaml | kubectl apply -f -
+          kubectl create configmap grafana-provisioning --from-file=provisioning/ --dry-run=client -o yaml | kubectl apply -f -
+
+      - name: Apply PVC (and any static resources)
+        run: |
+          kubectl apply -f monitoring-resources.yml
+
+      - name: Deploy All Services
+        run: |
+          kubectl apply -f all-services.yml
+
+      - name: Update FastAPI Image
+        run: |
+          kubectl set image deployment/fastapi fastapi=$FASTAPI_IMAGE:$GITHUB_SHA
+
+      - name: Update Flask Image
+        run: |
+          kubectl set image deployment/flask flask=$FLASK_IMAGE:$GITHUB_SHA
+
+      - name: Initialize Prometheus Data (only on init-data-* tag)
+        if: startsWith(github.ref, 'refs/tags/init-data-')
+        run: |
+          tar czf prometheus-data.tar.gz prometheus-data/
+          PROM_POD=$(kubectl get pod -l app=prometheus -o jsonpath="{.items[0].metadata.name}")
+          kubectl cp prometheus-data.tar.gz $PROM_POD:/prometheus
+          kubectl exec $PROM_POD -- tar xzf /prometheus/prometheus-data.tar.gz -C /prometheus
+
+      - name: Initialize Grafana Data (only on init-data-* tag)
+        if: startsWith(github.ref, 'refs/tags/init-data-')
+        run: |
+          tar czf grafana-data.tar.gz grafana-data/
+          GRAFANA_POD=$(kubectl get pod -l app=grafana -o jsonpath="{.items[0].metadata.name}")
+          kubectl cp grafana-data.tar.gz $GRAFANA_POD:/var/lib/grafana
+          kubectl exec $GRAFANA_POD -- tar xzf /var/lib/grafana/grafana-data.tar.gz -C /var/lib/grafana

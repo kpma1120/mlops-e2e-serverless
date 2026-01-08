@@ -65,9 +65,20 @@ jobs:
           kubectl create configmap grafana-provisioning-dashboards --from-file=provisioning/dashboards --dry-run=client -o yaml | kubectl apply -f -
           kubectl create configmap grafana-provisioning-datasources --from-file=provisioning/datasources --dry-run=client -o yaml | kubectl apply -f -
 
-      - name: Restart Deployments to pick up new ConfigMaps
+      - name: Reload Prometheus config via API (with fallback)
         run: |
-          kubectl rollout restart deployment prometheus
+          kubectl port-forward svc/prometheus-service 9090:9090 &
+          sleep 5
+          STATUS=$(curl -s -o /dev/null -w "%{http_code}" -X POST http://127.0.0.1:9090/-/reload)
+          if [ "$STATUS" -ne 200 ]; then
+            echo "Prometheus reload failed (HTTP $STATUS), fallback to rollout restart"
+            kubectl rollout restart deployment prometheus
+          else
+            echo "Prometheus reload succeeded"
+          fi
+
+      - name: Restart Grafana to pick up new ConfigMaps
+        run: |
           kubectl rollout restart deployment grafana
 
       - name: Apply PVC

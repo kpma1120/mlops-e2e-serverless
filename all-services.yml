@@ -5,6 +5,8 @@ metadata:
   name: prometheus
 spec:
   replicas: 1
+  strategy:
+    type: Recreate
   selector:
     matchLabels:
       app: prometheus
@@ -25,6 +27,8 @@ spec:
           - "--config.file=/etc/prometheus/prometheus.yml"
           - "--storage.tsdb.path=/prometheus"
           - "--web.enable-admin-api"
+          - "--web.enable-lifecycle"
+          - "--web.listen-address=0.0.0.0:9090"
         ports:
         - containerPort: 9090
         resources:
@@ -208,6 +212,8 @@ metadata:
   name: grafana
 spec:
   replicas: 1
+  strategy:
+    type: Recreate
   selector:
     matchLabels:
       app: grafana

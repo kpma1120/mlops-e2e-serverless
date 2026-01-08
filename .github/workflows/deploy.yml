@@ -72,7 +72,11 @@ jobs:
           STATUS=$(curl -s -o /dev/null -w "%{http_code}" -X POST http://127.0.0.1:9090/-/reload)
           if [ "$STATUS" -ne 200 ]; then
             echo "Prometheus reload failed (HTTP $STATUS), fallback to rollout restart"
-            kubectl rollout restart deployment prometheus
+            if [[ "${GITHUB_REF}" == refs/tags/init-data-* ]]; then
+              echo "Init-data deploy detected, skip fallback restart (will restart later)"
+            else
+              kubectl rollout restart deployment prometheus
+            fi
           else
             echo "Prometheus reload succeeded"
           fi
@@ -100,7 +104,26 @@ jobs:
       - name: Initialize Prometheus Data (only on init-data-* tag)
         if: startsWith(github.ref, 'refs/tags/init-data-')
         run: |
-          tar czf prometheus-data.tar.gz prometheus-data/
+          echo "Waiting for Prometheus deployment to be ready..."
+          kubectl rollout status deployment prometheus --timeout=180s || echo "Prometheus not fully ready, proceeding with init anyway"
+
+          echo "Packing snapshot blocks..."
+          tar czf prometheus-data.tar.gz -C prometheus-data/ .
+
           PROM_POD=$(kubectl get pod -l app=prometheus -o jsonpath="{.items[0].metadata.name}")
+
+          echo "Removing stale lock and TSDB runtime state files if exists..."
+          kubectl exec $PROM_POD -- rm -rf /prometheus/lock /prometheus/01* /prometheus/chunks_head /prometheus/wal /prometheus/queries.active || true
+
+          echo "Copying snapshot data into Prometheus PVC..."
           kubectl cp prometheus-data.tar.gz $PROM_POD:/prometheus
+
+          echo "Extracting snapshot blocks into /prometheus..."
           kubectl exec $PROM_POD -- tar xzf /prometheus/prometheus-data.tar.gz -C /prometheus
+
+          echo "Restart Prometheus to load snapshot..."
+          kubectl rollout restart deployment prometheus
+
+          echo "Prometheus snapshot restore step completed. Verify Grafana dashboards for data."
+
+          PROM_POD=$(kubectl get pod -l app=prometheus -o jsonpath='{.items[0].metadata.name}')

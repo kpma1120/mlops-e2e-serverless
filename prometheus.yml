@@ -1,7 +1,22 @@
 global:
-  scrape_interval: 15s
+  scrape_interval: 20s
+  evaluation_interval: 20s
 
 scrape_configs:
   - job_name: 'fastapi'
     static_configs:
       - targets: ['fastapi-service:8000']
+    metric_relabel_configs:
+      # Keep only metrics used by Grafana dashboard
+      - source_labels: [__name__]
+        regex: "prediction_request_total|drift_total|prediction_latency_seconds_bucket|prediction_error_total"
+        action: keep
+
+  - job_name: 'prometheus'
+    static_configs:
+      - targets: ['localhost:9090']
+    metric_relabel_configs:
+      # Keep Prometheus own health check metrics
+      - source_labels: [__name__]
+        regex: "up|scrape_duration_seconds|scrape_samples_scraped"
+        action: keep

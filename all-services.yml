@@ -33,11 +33,11 @@ spec:
         - containerPort: 9090
         resources:
           requests:
+            cpu: "100m"
+            memory: "128Mi"
+          limits:
             cpu: "200m"
             memory: "256Mi"
-          limits:
-            cpu: "400m"
-            memory: "512Mi"
         readinessProbe:
           httpGet:
             path: /-/ready
@@ -102,11 +102,11 @@ spec:
         - containerPort: 8000
         resources:
           requests:
-            cpu: "250m"
-            memory: "512Mi"
+            cpu: "200m"
+            memory: "256Mi"
           limits:
-            cpu: "500m"
-            memory: "1Gi"
+            cpu: "300m"
+            memory: "512Mi"
         readinessProbe:
           httpGet:
             path: /health
@@ -172,11 +172,11 @@ spec:
         - containerPort: 5000
         resources:
           requests:
-            cpu: "250m"
-            memory: "512Mi"
+            cpu: "200m"
+            memory: "256Mi"
           limits:
-            cpu: "500m"
-            memory: "1Gi"
+            cpu: "300m"
+            memory: "512Mi"
         readinessProbe:
           httpGet:
             path: /health
@@ -234,11 +234,11 @@ spec:
         - containerPort: 3000
         resources:
           requests:
+            cpu: "100m"
+            memory: "128Mi"
+          limits:
             cpu: "200m"
             memory: "256Mi"
-          limits:
-            cpu: "400m"
-            memory: "512Mi"
         env:
         - name: GF_SECURITY_ADMIN_PASSWORD
           value: "admin"
